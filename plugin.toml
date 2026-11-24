@@ -1,0 +1,375 @@
+id = "ruyimg.translation"
+name = "Translation"
+version = "0.1.0"
+description = "YiiGuxing TranslationPlugin for OpenIDEA: 7 translation engines with Multi-Engine Compare, Google spell check & Velocity OpenAI prompts, 6 TTS backends (Edge, Azure, Youdao, Google, OpenAI, Browser), multi-cursor Translate & Replace with naming styles & keepFormat, inline comment/doc & .ipynb translation with tag protection, Word Book with 7 export/import formats, Tag Manager & Word of the Day (22 commands, 4 settings pages, zero high-risk permissions)."
+authors = ["ruyimg"]
+homepage = "https://github.com/RuyimgByCN/openidea-translation"
+license = "Apache-2.0"
+change-notes = "0.1.0 — full-parity release: 7 translation engines + Multi-Engine Compare, Google spell check (&dt=at/&dt=qca), Velocity-style OpenAI prompts, 6 TTS backends (Edge WS/Azure/Youdao/Chunked Google/OpenAI/Browser), multi-cursor Translate & Replace (autoReplace/keepFormat/stripArticles), inline tag protection + bilingual & .ipynb doc translation, Word Book (7 export/import formats, flashcards, Tag Manager, Word of the Day), 22 commands, 4 settings pages, EN/ZH UI."
+categories = ["tools", "ai"]
+engines.openidea = "^1.14"
+wasm = "dist/plugin.wasm"
+icon = "icons/icon.svg"
+icon-dark = "icons/icon_dark.svg"
+activation = [
+  "on-view:translation",
+  "on-command:*",
+  "on-event:settings-changed",
+  "on-event:content-tab-action",
+  "on-event:websocket-ready",
+  "on-startup-finished",
+]
+
+[capabilities]
+required = [
+  "editor.read",
+  "editor.write",
+  "clipboard",
+  "storage",
+  "events",
+  "net:translate.googleapis.com",
+  "net:edge.microsoft.com",
+  "net:api-edge.cognitive.microsofttranslator.com",
+  "net:dict.youdao.com",
+]
+optional = [
+  "project.read",
+  "clipboard.read",
+  "secrets",
+  "net:api.openai.com",
+  "net:api-free.deepl.com",
+  "net:api.deepl.com",
+  "net:api.cognitive.microsofttranslator.com",
+  "net:translation.googleapis.com",
+  "net:openapi.youdao.com",
+  "net:fanyi-api.baidu.com",
+  "net:mt.aliyuncs.com",
+  "net:mt.cn-hangzhou.aliyuncs.com",
+  "net:speech.platform.bing.com",
+  "net:*.tts.speech.microsoft.com",
+  "net:ask",
+]
+
+[[contributes.secrets]]
+name = "openai-api-key"
+label = "OpenAI / Compatible API Key"
+description = "Stored in the OS keychain and injected into Authorization headers for OpenAI / compatible LLM and TTS requests."
+
+[[contributes.secrets]]
+name = "deepl-api-key"
+label = "DeepL Auth Key"
+description = "Stored in the OS keychain and injected into DeepL-Auth-Key headers for DeepL Free or Pro API."
+
+[[contributes.secrets]]
+name = "microsoft-api-key"
+label = "Azure Translator Subscription Key"
+description = "Stored in the OS keychain and injected into Ocp-Apim-Subscription-Key headers when Microsoft mode is set to azure."
+
+[[contributes.secrets]]
+name = "google-api-key"
+label = "Google Cloud Translation API Key (Optional)"
+description = "Stored in the OS keychain and injected into X-Goog-Api-Key headers when Google mode is set to cloud-api."
+
+[[contributes.secrets]]
+name = "openai-tts-api-key"
+label = "OpenAI TTS API Key (Optional)"
+description = "Optional separate API key stored in the OS keychain for OpenAI / compatible /audio/speech endpoints. Falls back to openai-api-key when unset."
+
+[[contributes.secrets]]
+name = "azure-speech-api-key"
+label = "Azure Speech (TTS) Subscription Key"
+description = "Stored in the OS keychain and injected into Ocp-Apim-Subscription-Key headers for Azure Neural Speech TTS."
+
+[[contributes.views]]
+id = "translation"
+title = "Translation"
+icon = "icons/icon.svg"
+location = "right"
+secondary = true
+web = "web/index.html"
+header = "none"
+
+[[contributes.providers]]
+kinds = ["hover", "code-actions"]
+languages = ["*"]
+
+[[contributes.searchCategories]]
+id = "wordbook"
+title = "Translation Word Book"
+
+[[contributes.statusBar]]
+id = "translation"
+text = "Translate"
+tooltip = "Translation — Click for engine & language menu"
+command = "open-panel"
+align = "right"
+priority = 95
+
+[contributes.settings]
+title = "Translation"
+
+[[contributes.settings.pages]]
+id = "general"
+title = "General"
+schema = "settings/general.json"
+
+[[contributes.settings.pages.actions]]
+title = "Test Connection"
+command = "test-connection"
+
+[[contributes.settings.pages.actions]]
+title = "Clear Cache"
+command = "clear-cache"
+
+[[contributes.settings.pages]]
+id = "engines"
+title = "Engines & AI"
+schema = "settings/engines.json"
+
+[[contributes.settings.pages.actions]]
+title = "Test Connection"
+command = "test-connection"
+
+[[contributes.settings.pages]]
+id = "replace-doc"
+title = "Replace & Document"
+schema = "settings/replace_and_doc.json"
+
+[[contributes.settings.pages]]
+id = "tts"
+title = "Text-to-Speech"
+schema = "settings/tts.json"
+
+# --- Commands ---
+
+[[contributes.commands]]
+id = "translate"
+title = "Translation: Translate Selection / Word"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-and-replace"
+title = "Translation: Translate and Replace"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-doc"
+title = "Translation: Translate Documentation / Comment"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "toggle-doc-annotations"
+title = "Translation: Toggle Inline Comment Translation"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-document"
+title = "Translation: Translate Current Document"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "quick-translate"
+title = "Translation: Quick Translate Input..."
+category = "Translation"
+
+[[contributes.commands]]
+id = "speak-selection"
+title = "Translation: Pronounce Selection (TTS)"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "add-to-wordbook"
+title = "Translation: Add Selection to Word Book"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "open-panel"
+title = "Translation: Open Translation Panel"
+category = "Translation"
+
+[[contributes.commands]]
+id = "open-wordbook"
+title = "Translation: Open Word Book"
+category = "Translation"
+
+[[contributes.commands]]
+id = "switch-engine"
+title = "Translation: Switch Translation Engine"
+category = "Translation"
+
+[[contributes.commands]]
+id = "switch-target-language"
+title = "Translation: Switch Target Language"
+category = "Translation"
+
+[[contributes.commands]]
+id = "swap-languages"
+title = "Translation: Swap Source & Target Languages"
+category = "Translation"
+
+[[contributes.commands]]
+id = "clear-cache"
+title = "Translation: Clear Translation Cache"
+category = "Translation"
+
+[[contributes.commands]]
+id = "test-connection"
+title = "Translation: Test Active Engine Connection"
+category = "Translation"
+
+[[contributes.commands]]
+id = "retry-pending-request"
+title = "Translation: Authorize Host & Retry Request"
+category = "Translation"
+
+[[contributes.commands]]
+id = "translate-inclusive"
+title = "Translation: Translate Whole Identifier (Inclusive)"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-exclusive"
+title = "Translation: Translate Subword Under Caret (Exclusive)"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-and-copy"
+title = "Translation: Translate and Copy Result"
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-with-engine"
+title = "Translation: Translate with Selected Engine..."
+category = "Translation"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "translate-clipboard"
+title = "Translation: Translate Clipboard"
+category = "Translation"
+
+[[contributes.commands]]
+id = "word-of-the-day"
+title = "Translation: Word of the Day"
+category = "Translation"
+
+# --- Menus ---
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-inclusive"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-exclusive"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-and-replace"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-and-copy"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-with-engine"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-doc"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "toggle-doc-annotations"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "translate-document"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "speak-selection"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "editor.context"
+command = "add-to-wordbook"
+submenu = "Translation"
+
+[[contributes.menus]]
+menu = "tools"
+command = "open-panel"
+
+[[contributes.menus]]
+menu = "tools"
+command = "open-wordbook"
+
+[[contributes.menus]]
+menu = "tools"
+command = "quick-translate"
+
+[[contributes.menus]]
+menu = "tools"
+command = "translate-clipboard"
+
+[[contributes.menus]]
+menu = "tools"
+command = "word-of-the-day"
+
+[[contributes.menus]]
+menu = "tools"
+command = "switch-engine"
+
+[[contributes.menus]]
+menu = "tools"
+command = "switch-target-language"
+
+[[contributes.menus]]
+menu = "tools"
+command = "test-connection"
+
+# --- Keymaps ---
+
+[[contributes.keymaps]]
+command = "translate"
+key = "Ctrl+Shift+Y"
+mac = "Ctrl+Meta+U"
+
+[[contributes.keymaps]]
+command = "translate-and-replace"
+key = "Ctrl+Shift+X"
+mac = "Ctrl+Meta+O"
+
+[[contributes.keymaps]]
+command = "translate-doc"
+key = "Ctrl+Shift+Q"
+mac = "Ctrl+Meta+I"
+
+[[contributes.keymaps]]
+command = "quick-translate"
+key = "Alt+Shift+Y"
+mac = "Meta+Alt+Y"

@@ -1,0 +1,103 @@
+{
+  "properties": {
+    "ttsEngine": {
+      "type": "string",
+      "title": "TTS pronunciation engine",
+      "description": "Speech synthesis backend: auto prefers Edge/Youdao/Google for short words and falls back cleanly to browser speech synthesis.",
+      "enum": ["auto", "edge", "azure", "youdao", "google", "openai", "browser"],
+      "default": "auto",
+      "group": "Text-to-Speech"
+    },
+    "ttsAccent": {
+      "type": "string",
+      "title": "English accent",
+      "description": "Preferred English pronunciation accent for Edge, Azure, Youdao, and Google TTS.",
+      "enum": ["us", "uk"],
+      "default": "us",
+      "group": "Text-to-Speech"
+    },
+    "edgeVoice": {
+      "type": "string",
+      "title": "Edge TTS voice",
+      "description": "Neural voice used when TTS engine is set to edge (or auto picks automatically by language/accent).",
+      "enum": [
+        "auto",
+        "en-US-AriaNeural",
+        "en-US-JennyNeural",
+        "en-US-GuyNeural",
+        "en-GB-SoniaNeural",
+        "en-GB-RyanNeural",
+        "zh-CN-XiaoxiaoNeural",
+        "zh-CN-YunxiNeural",
+        "ja-JP-NanamiNeural",
+        "ko-KR-SunHiNeural",
+        "fr-FR-DeniseNeural",
+        "de-DE-KatjaNeural"
+      ],
+      "default": "auto",
+      "group": "Microsoft Edge & Azure TTS"
+    },
+    "azureSpeechRegion": {
+      "type": "string",
+      "title": "Azure Speech region",
+      "description": "Azure Cognitive Services Speech region (e.g. eastus, westus2, japaneast) used with azure-speech-api-key secret.",
+      "default": "eastus",
+      "group": "Microsoft Edge & Azure TTS"
+    },
+    "azureSpeechVoice": {
+      "type": "string",
+      "title": "Azure Speech voice",
+      "description": "Optional explicit Azure Neural voice name (e.g. en-US-JennyNeural) or auto by language.",
+      "default": "auto",
+      "group": "Microsoft Edge & Azure TTS"
+    },
+    "openaiTtsBaseUrl": {
+      "type": "string",
+      "title": "OpenAI TTS base URL (optional)",
+      "description": "Optional base URL before /audio/speech. Leave empty to reuse openaiBaseUrl; configure optional openai-tts-api-key secret if using a different provider.",
+      "default": "",
+      "group": "OpenAI TTS"
+    },
+    "openaiTtsModel": {
+      "type": "string",
+      "title": "OpenAI TTS model",
+      "description": "Model used when TTS engine is set to openai.",
+      "enum": ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
+      "default": "gpt-4o-mini-tts",
+      "group": "OpenAI TTS"
+    },
+    "openaiTtsVoice": {
+      "type": "string",
+      "title": "OpenAI TTS voice",
+      "description": "Voice preset used when TTS engine is set to openai.",
+      "enum": [
+        "alloy", "ash", "ballad", "coral", "echo", "fable",
+        "marin", "cedar", "nova", "onyx", "sage", "shimmer", "verse"
+      ],
+      "default": "alloy",
+      "group": "OpenAI TTS"
+    },
+    "openaiTtsInstructions": {
+      "type": "string",
+      "title": "OpenAI TTS style instructions",
+      "description": "Optional natural-language speaking style instructions (supported by gpt-4o-mini-tts).",
+      "multiline": true,
+      "default": "",
+      "group": "OpenAI TTS"
+    },
+    "ttsSpeed": {
+      "type": "number",
+      "title": "Playback speed",
+      "description": "Playback rate multiplier (0.5 to 2.0).",
+      "default": 1.0,
+      "group": "Text-to-Speech"
+    },
+    "ttsAutoPlay": {
+      "type": "boolean",
+      "title": "Auto-play pronunciation after translating short words",
+      "description": "Automatically speak single-word or short-phrase translations inside the Translation panel.",
+      "default": false,
+      "group": "Text-to-Speech"
+    }
+  }
+}

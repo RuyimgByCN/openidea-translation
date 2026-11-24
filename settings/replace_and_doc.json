@@ -1,0 +1,60 @@
+{
+  "properties": {
+    "keepFormat": {
+      "type": "boolean",
+      "title": "Preserve surrounding whitespace & quotes",
+      "description": "Keep leading/trailing whitespace or outer quote delimiters (\"...\", '...', `...`) when replacing selected text.",
+      "default": true,
+      "group": "Translate & Replace"
+    },
+    "stripArticlesInIdentifier": {
+      "type": "boolean",
+      "title": "Strip articles when building identifiers",
+      "description": "Remove leading English articles (a, an, the) when formatting camelCase, snake_case, and related candidates.",
+      "default": true,
+      "group": "Translate & Replace"
+    },
+    "autoReplace": {
+      "type": "boolean",
+      "title": "Auto-replace with preferred naming style",
+      "description": "Directly apply the top preferred naming style without showing a selection picker.",
+      "default": false,
+      "group": "Translate & Replace"
+    },
+    "selectTargetLanguageBeforeReplacement": {
+      "type": "boolean",
+      "title": "Pick target language before replacing",
+      "description": "Ask for the target language before running Translate & Replace.",
+      "default": false,
+      "group": "Translate & Replace"
+    },
+    "docBilingualMode": {
+      "type": "boolean",
+      "title": "Bilingual document output",
+      "description": "Output original text paired with translation for Markdown, code documents, and Jupyter (.ipynb) notebooks.",
+      "default": false,
+      "group": "Document & Comment Translation"
+    },
+    "foldOriginalInDoc": {
+      "type": "boolean",
+      "title": "Fold original blocks in Markdown output",
+      "description": "Wrap original paragraphs inside collapsible <details> blocks when generating bilingual Markdown output.",
+      "default": false,
+      "group": "Document & Comment Translation"
+    },
+    "openDocPreviewTab": {
+      "type": "boolean",
+      "title": "Open preview/diff tab for translated documents",
+      "description": "Open a read-only preview or diff tab automatically after translating a document or documentation comment.",
+      "default": true,
+      "group": "Document & Comment Translation"
+    },
+    "preserveInlineTagsInDoc": {
+      "type": "boolean",
+      "title": "Protect inline tags in comments & docs",
+      "description": "Preserve Javadoc/KDoc/JSDoc/HTML/Markdown inline tags ({@link ...}, {@code ...}, <code>...</code>, `...`, URLs) verbatim during translation.",
+      "default": true,
+      "group": "Document & Comment Translation"
+    }
+  }
+}

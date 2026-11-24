@@ -1,0 +1,165 @@
+{
+  "properties": {
+    "uiLanguage": {
+      "type": "string",
+      "title": "Display language",
+      "description": "WebView UI language. Use auto to follow OpenIDEA's default UI language.",
+      "enum": ["auto", "en", "zh-CN"],
+      "default": "auto",
+      "group": "General"
+    },
+    "engine": {
+      "type": "string",
+      "title": "Translation engine",
+      "description": "Active translation backend used by editor commands, document translation, and the Translation panel.",
+      "enum": ["google", "microsoft", "openai", "deepl", "youdao", "baidu", "alibaba"],
+      "default": "google",
+      "group": "General"
+    },
+    "instantTranslation": {
+      "type": "boolean",
+      "title": "Instant translation while typing",
+      "description": "Automatically translate after a short typing pause inside the Translation panel.",
+      "default": true,
+      "group": "General"
+    },
+    "primaryLanguage": {
+      "type": "string",
+      "title": "Primary language",
+      "description": "Preferred target language when translating text written in another language (smart Primary <-> Secondary mode).",
+      "enum": [
+        "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it",
+        "nl", "pl", "tr", "vi", "th", "id", "ar", "hi", "uk", "cs", "sv", "da",
+        "fi", "no", "el", "he", "ro", "hu", "bg", "sk", "ms", "fa", "ta", "la"
+      ],
+      "default": "zh-CN",
+      "group": "Languages"
+    },
+    "secondaryLanguage": {
+      "type": "string",
+      "title": "Secondary language",
+      "description": "Fallback target language used automatically when the source text is already in your primary language.",
+      "enum": [
+        "en", "zh-CN", "zh-TW", "ja", "ko", "fr", "de", "es", "ru", "pt", "it",
+        "nl", "pl", "tr", "vi", "th", "id", "ar", "hi", "uk", "cs", "sv", "da",
+        "fi", "no", "el", "he", "ro", "hu", "bg", "sk", "ms", "fa", "ta", "la"
+      ],
+      "default": "en",
+      "group": "Languages"
+    },
+    "sourceLanguage": {
+      "type": "string",
+      "title": "Default source language",
+      "description": "Explicit source language or auto-detect.",
+      "enum": [
+        "auto", "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it",
+        "nl", "pl", "tr", "vi", "th", "id", "ar", "hi", "uk", "cs", "sv", "da",
+        "fi", "no", "el", "he", "ro", "hu", "bg", "sk", "ms", "fa", "ta", "la"
+      ],
+      "default": "auto",
+      "group": "Languages"
+    },
+    "targetLanguage": {
+      "type": "string",
+      "title": "Default target language",
+      "description": "Explicit target language, or auto to switch intelligently between primary and secondary languages.",
+      "enum": [
+        "auto", "zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es", "ru", "pt", "it",
+        "nl", "pl", "tr", "vi", "th", "id", "ar", "hi", "uk", "cs", "sv", "da",
+        "fi", "no", "el", "he", "ro", "hu", "bg", "sk", "ms", "fa", "ta", "la"
+      ],
+      "default": "auto",
+      "group": "Languages"
+    },
+    "targetLanguageSelection": {
+      "type": "string",
+      "title": "Automatic target language strategy",
+      "description": "How auto target language is resolved: primary switches Primary <-> Secondary, last prefers your most recent target language when non-primary, and default picks Primary unless source is already Primary.",
+      "enum": ["primary", "last", "default"],
+      "default": "primary",
+      "group": "Languages"
+    },
+    "autoSelectionMode": {
+      "type": "string",
+      "title": "Auto-selection mode",
+      "description": "How words are auto-selected when there is no editor selection: inclusive picks the whole identifier, exclusive picks the CamelCase/snake_case word under caret.",
+      "enum": ["inclusive", "exclusive"],
+      "default": "inclusive",
+      "group": "Editor Integration"
+    },
+    "autoSplitWords": {
+      "type": "boolean",
+      "title": "Split CamelCase & snake_case words",
+      "description": "Split code identifiers like getUserProfile or user_auth_token into separate words before translating.",
+      "default": true,
+      "group": "Editor Integration"
+    },
+    "separators": {
+      "type": "string",
+      "title": "Identifier separator characters",
+      "description": "Custom separator characters split as word boundaries inside code identifiers (default: _-.).",
+      "default": "_-.",
+      "group": "Editor Integration"
+    },
+    "ignoreRegExp": {
+      "type": "string",
+      "title": "Ignore regular expression",
+      "description": "Optional Rust regex pattern stripped before translating selected text or comments (e.g. ^\\s*//\\s*|^\\s*\\*\\s*).",
+      "default": "",
+      "group": "Editor Integration"
+    },
+    "showHoverTranslation": {
+      "type": "boolean",
+      "title": "Show cached & Word Book translations on hover",
+      "description": "Display instant zero-network dictionary translations from cache and Word Book inside editor hover popups.",
+      "default": true,
+      "group": "Editor Integration"
+    },
+    "showDocAnnotations": {
+      "type": "boolean",
+      "title": "Allow inline comment translation annotations",
+      "description": "Enable toggling end-of-line translated comment annotations via Translation: Toggle Inline Comment Translation.",
+      "default": true,
+      "group": "Editor Integration"
+    },
+    "preferredNamingStyle": {
+      "type": "string",
+      "title": "Preferred naming style for Translate & Replace",
+      "description": "Naming format placed first when replacing selected text with an English translation.",
+      "enum": [
+        "camelCase", "PascalCase", "snake_case", "SCREAMING_SNAKE_CASE", "kebab-case",
+        "dot.case", "Title Case", "UPPER CASE", "lower case", "original"
+      ],
+      "default": "camelCase",
+      "group": "Editor Integration"
+    },
+    "cacheEnabled": {
+      "type": "boolean",
+      "title": "Enable persistent translation cache",
+      "description": "Cache recent translations locally for instant hover lookups and faster repeat translations.",
+      "default": true,
+      "group": "Storage"
+    },
+    "cacheTtlHours": {
+      "type": "integer",
+      "title": "Translation cache TTL (hours)",
+      "description": "Hours before cached entries expire (0 disables automatic expiration).",
+      "default": 168,
+      "group": "Storage"
+    },
+    "maxHistoryItems": {
+      "type": "integer",
+      "title": "Translation history limit",
+      "description": "Maximum number of recent translation history records stored locally (10-500).",
+      "default": 100,
+      "group": "Storage"
+    },
+    "showWordsOnStartup": {
+      "type": "boolean",
+      "title": "Show Word of the Day on startup",
+      "description": "Show a notification with a Word Book review item when OpenIDEA finishes starting up.",
+      "default": false,
+      "group": "Storage"
+    }
+  }
+}

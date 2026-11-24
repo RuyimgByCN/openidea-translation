@@ -1,0 +1,180 @@
+{
+  "properties": {
+    "openaiBaseUrl": {
+      "type": "string",
+      "title": "OpenAI / Compatible base URL",
+      "description": "API base URL ending before /chat/completions and /audio/speech (e.g. https://api.openai.com/v1, https://api.deepseek.com/v1, or http://localhost:11434/v1). Configure the API key in Settings -> Plugins -> Secrets.",
+      "default": "https://api.openai.com/v1",
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiModel": {
+      "type": "string",
+      "title": "OpenAI model",
+      "description": "Model identifier sent to the chat completions endpoint.",
+      "default": "gpt-4o-mini",
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiTemperature": {
+      "type": "number",
+      "title": "Temperature",
+      "description": "Sampling temperature (0.0 to 2.0).",
+      "default": 0.2,
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiStructuredDict": {
+      "type": "boolean",
+      "title": "Structured dictionary mode for short phrases",
+      "description": "Ask the LLM for phonetics, parts of speech, definitions, and example sentences on words and short phrases.",
+      "default": true,
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiSystemPrompt": {
+      "type": "string",
+      "title": "Custom system prompt",
+      "description": "Optional extra system prompt instructions appended for OpenAI-compatible translation.",
+      "multiline": true,
+      "default": "",
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiTranslatePrompt": {
+      "type": "string",
+      "title": "Text prompt template (Velocity-style)",
+      "description": "Optional full prompt template supporting [SYSTEM], [USER], #if($SOURCE_LANGUAGE)...#else...#end, ${SOURCE_LANGUAGE}, ${TARGET_LANGUAGE}, ${TEXT}, and ${DS}. Leave blank to use the built-in translator/dictionary prompt.",
+      "multiline": true,
+      "default": "",
+      "group": "OpenAI / Compatible LLM"
+    },
+    "openaiDocumentPrompt": {
+      "type": "string",
+      "title": "Document prompt template (Velocity-style)",
+      "description": "Optional Velocity-style prompt template used when translating documents, comments, or Markdown.",
+      "multiline": true,
+      "default": "",
+      "group": "OpenAI / Compatible LLM"
+    },
+    "deeplTier": {
+      "type": "string",
+      "title": "DeepL API tier",
+      "description": "DeepL endpoint tier. Store your DeepL Auth Key in Settings -> Plugins -> Secrets (deepl-api-key).",
+      "enum": ["free", "pro", "custom"],
+      "default": "free",
+      "group": "DeepL"
+    },
+    "deeplCustomUrl": {
+      "type": "string",
+      "title": "DeepL custom endpoint URL",
+      "description": "Full /v2/translate URL used only when DeepL API tier is set to custom.",
+      "default": "",
+      "group": "DeepL"
+    },
+    "deeplFormality": {
+      "type": "string",
+      "title": "DeepL formality",
+      "description": "Tone preference for supported DeepL target languages (DE, FR, IT, ES, NL, PL, PT-BR, PT-PT, JA, RU).",
+      "enum": ["default", "more", "less", "prefer_more", "prefer_less"],
+      "default": "default",
+      "group": "DeepL"
+    },
+    "microsoftMode": {
+      "type": "string",
+      "title": "Microsoft Translator mode",
+      "description": "edge-free uses Microsoft Edge translator tokens (no key required); azure uses your official Azure Cognitive Services secret (microsoft-api-key).",
+      "enum": ["edge-free", "azure"],
+      "default": "edge-free",
+      "group": "Microsoft Translator"
+    },
+    "microsoftRegion": {
+      "type": "string",
+      "title": "Azure Translator region",
+      "description": "Optional Ocp-Apim-Subscription-Region header for multi-service Azure resources (leave global if unsure).",
+      "default": "global",
+      "group": "Microsoft Translator"
+    },
+    "microsoftCustomEndpoint": {
+      "type": "string",
+      "title": "Microsoft custom endpoint",
+      "description": "Optional custom base URL for Azure Translator.",
+      "default": "",
+      "group": "Microsoft Translator"
+    },
+    "googleMode": {
+      "type": "string",
+      "title": "Google Translate mode",
+      "description": "free uses translate.googleapis.com with rich dictionary entries; cloud-api uses Google Cloud Translation v2 with google-api-key secret.",
+      "enum": ["free", "cloud-api"],
+      "default": "free",
+      "group": "Google Translate"
+    },
+    "googleCustomHost": {
+      "type": "string",
+      "title": "Google custom host (optional)",
+      "description": "Optional custom Google Translate host (e.g. translate.google.com) used when net:ask is granted.",
+      "default": "",
+      "group": "Google Translate"
+    },
+    "googleUseSpellCheck": {
+      "type": "boolean",
+      "title": "Spell check & alternate translations",
+      "description": "Request Google spelling suggestions (Did you mean...?) and alternate translation variants (&dt=at).",
+      "default": true,
+      "group": "Google Translate"
+    },
+    "youdaoAppKey": {
+      "type": "string",
+      "title": "Youdao App Key",
+      "description": "Youdao Zhiyun App ID for openapi.youdao.com/api (v3 signed requests).",
+      "default": "",
+      "group": "Youdao Translate"
+    },
+    "youdaoAppSecret": {
+      "type": "string",
+      "title": "Youdao App Secret",
+      "description": "Youdao App Secret used solely to compute local SHA-256 v3 signatures; never transmitted or shown in UI.",
+      "default": "",
+      "group": "Youdao Translate"
+    },
+    "baiduAppId": {
+      "type": "string",
+      "title": "Baidu App ID",
+      "description": "Baidu Fanyi API App ID for fanyi-api.baidu.com.",
+      "default": "",
+      "group": "Baidu Translate"
+    },
+    "baiduSecretKey": {
+      "type": "string",
+      "title": "Baidu Secret Key",
+      "description": "Baidu Secret Key used solely to compute local MD5 request signatures; never transmitted or shown in UI.",
+      "default": "",
+      "group": "Baidu Translate"
+    },
+    "alibabaAccessKeyId": {
+      "type": "string",
+      "title": "Alibaba AccessKey ID",
+      "description": "Alibaba Cloud AccessKey ID for Machine Translation (TranslateGeneral).",
+      "default": "",
+      "group": "Alibaba Cloud MT"
+    },
+    "alibabaAccessKeySecret": {
+      "type": "string",
+      "title": "Alibaba AccessKey Secret",
+      "description": "Alibaba Cloud AccessKey Secret used solely to compute local HMAC-SHA1 RPC signatures; never transmitted or shown in UI.",
+      "default": "",
+      "group": "Alibaba Cloud MT"
+    },
+    "alibabaRegionId": {
+      "type": "string",
+      "title": "Alibaba Region ID",
+      "description": "Alibaba Cloud MT region endpoint (e.g. cn-hangzhou).",
+      "default": "cn-hangzhou",
+      "group": "Alibaba Cloud MT"
+    },
+    "alibabaScene": {
+      "type": "string",
+      "title": "Alibaba translation scene",
+      "description": "Domain scene passed to TranslateGeneral.",
+      "enum": ["general", "title", "description", "communication", "medical", "social", "finance"],
+      "default": "general",
+      "group": "Alibaba Cloud MT"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+/dist/
+/target/
+*.oiplugin
+*.key
+*.swp
+.DS_Store
