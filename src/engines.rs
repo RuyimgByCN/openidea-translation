@@ -72,12 +72,6 @@ pub struct TranslationResult {
     pub latency_ms: u64,
 }
 
-#[derive(Clone, Debug)]
-pub struct EdgeToken {
-    pub token: String,
-    pub expires_at_secs: u64,
-}
-
 pub fn unix_secs_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -208,7 +202,6 @@ pub fn translate_with_engine(
     source_lang: &str,
     target_lang: &str,
     cfg: &TranslationConfig,
-    edge_token: &mut Option<EdgeToken>,
 ) -> Result<TranslationResult, Error> {
     translate_with_engine_mode(
         engine,
@@ -217,7 +210,6 @@ pub fn translate_with_engine(
         source_lang,
         target_lang,
         cfg,
-        edge_token,
         false,
     )
 }
@@ -229,15 +221,12 @@ pub fn translate_with_engine_mode(
     source_lang: &str,
     target_lang: &str,
     cfg: &TranslationConfig,
-    edge_token: &mut Option<EdgeToken>,
     is_document: bool,
 ) -> Result<TranslationResult, Error> {
     let start_ms = unix_millis_now();
     let mut res = match engine {
         EngineId::Google => translate_google(query_text, source_lang, target_lang, cfg)?,
-        EngineId::Microsoft => {
-            translate_microsoft(query_text, source_lang, target_lang, cfg, edge_token)?
-        }
+        EngineId::Microsoft => translate_microsoft(query_text, source_lang, target_lang, cfg)?,
         EngineId::Openai => {
             translate_openai(query_text, source_lang, target_lang, cfg, is_document)?
         }
@@ -262,14 +251,80 @@ fn truncate_msg(s: &str, max: usize) -> String {
     out
 }
 
+fn strip_tag_block(input: &str, tag: &str) -> String {
+    let open_pat = format!("<{tag}");
+    let close_pat = format!("</{tag}>");
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        let Some(start) = lower.find(&open_pat) else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let after_open = &lower[start..];
+        if let Some(end_rel) = after_open.find(&close_pat) {
+            rest = &rest[start + end_rel + close_pat.len()..];
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+fn clean_error_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let cleaned =
+        if trimmed.starts_with('<') || lower.contains("<html") || lower.contains("<!doctype") {
+            let no_style = strip_tag_block(trimmed, "style");
+            let no_script = strip_tag_block(&no_style, "script");
+            let mut plain = String::with_capacity(no_script.len());
+            let mut in_tag = false;
+            for ch in no_script.chars() {
+                match ch {
+                    '<' => {
+                        in_tag = true;
+                        plain.push(' ');
+                    }
+                    '>' => in_tag = false,
+                    _ if !in_tag => plain.push(ch),
+                    _ => {}
+                }
+            }
+            plain
+                .replace("&quot;", "\"")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            trimmed.to_owned()
+        };
+    truncate_msg(&cleaned, 180)
+}
+
 fn check_http_status(status: u16, body: &str, engine: &str) -> Result<(), Error> {
     if (200..300).contains(&status) {
         return Ok(());
     }
-    Err(Error::Failed(format!(
-        "{engine} HTTP {status}: {}",
-        truncate_msg(body.trim(), 240)
-    )))
+    if status == 429 {
+        return Err(Error::Failed(format!(
+            "{engine} HTTP 429: Rate limited by upstream server. Retry later, switch engine (e.g. Microsoft Translator), or configure an API key."
+        )));
+    }
+    let detail = clean_error_body(body);
+    if detail.is_empty() {
+        Err(Error::Failed(format!("{engine} HTTP {status}")))
+    } else {
+        Err(Error::Failed(format!("{engine} HTTP {status}: {detail}")))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -569,66 +624,28 @@ fn strip_html_tags(input: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Microsoft Translator (Edge Free + Official Azure)
+// 2. Microsoft Translator (Edge Free translatetext + Official Azure)
 // ---------------------------------------------------------------------------
-
-fn fetch_edge_token(force_refresh: bool, cache: &mut Option<EdgeToken>) -> Result<String, Error> {
-    let now = unix_secs_now();
-    if !force_refresh
-        && let Some(cached) = cache.as_ref()
-        && now + 30 < cached.expires_at_secs
-    {
-        return Ok(cached.token.clone());
-    }
-
-    let mut req = HttpRequest::get("https://edge.microsoft.com/translate/auth")
-        .header("Accept", "text/plain");
-    req.timeout_ms = Some(10_000);
-    let resp = host::fetch(&req)?;
-    let token = resp.text().trim().to_owned();
-    if !(200..300).contains(&resp.status) || token.is_empty() {
-        return Err(Error::Failed(format!(
-            "Microsoft Edge auth failed (HTTP {}). Switch Microsoft mode to 'azure' with `microsoft-api-key` or select Google/OpenAI.",
-            resp.status
-        )));
-    }
-    let exp = parse_jwt_exp(&token).unwrap_or(now + 480);
-    *cache = Some(EdgeToken {
-        token: token.clone(),
-        expires_at_secs: exp,
-    });
-    Ok(token)
-}
-
-fn parse_jwt_exp(jwt: &str) -> Option<u64> {
-    let payload_b64 = jwt.split('.').nth(1)?;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
-    let v: Value = serde_json::from_slice(&bytes).ok()?;
-    v.get("exp").and_then(Value::as_u64)
-}
 
 fn translate_microsoft(
     text: &str,
     source_lang: &str,
     target_lang: &str,
     cfg: &TranslationConfig,
-    edge_token: &mut Option<EdgeToken>,
 ) -> Result<TranslationResult, Error> {
     let to = to_microsoft_code(target_lang).unwrap_or("en");
     let from = to_microsoft_code(source_lang);
-    let mut query = format!("api-version=3.0&to={}", percent_encode_rfc3986(to));
-    if let Some(f) = from {
-        query.push_str(&format!("&from={}", percent_encode_rfc3986(f)));
-    }
-    let body_json = json!([{ "Text": text }]).to_string();
 
-    let (resp_body, auth_mode_used, bearer_token) = if cfg.microsoft_mode == "azure" {
+    let (resp_body, auth_mode_used) = if cfg.microsoft_mode == "azure" {
         if !host::secret_is_set("microsoft-api-key") {
             return Err(Error::Invalid(
                 "Microsoft Azure mode requires secret `microsoft-api-key` in Settings -> Plugins"
                     .into(),
             ));
+        }
+        let mut query = format!("api-version=3.0&to={}", percent_encode_rfc3986(to));
+        if let Some(f) = from {
+            query.push_str(&format!("&from={}", percent_encode_rfc3986(f)));
         }
         let base = if cfg.microsoft_custom_endpoint.is_empty() {
             "https://api.cognitive.microsofttranslator.com"
@@ -636,7 +653,7 @@ fn translate_microsoft(
             cfg.microsoft_custom_endpoint.trim_end_matches('/')
         };
         let url = format!("{base}/translate?{query}");
-        let mut req = HttpRequest::post(&url, body_json)
+        let mut req = HttpRequest::post(&url, json!([{ "Text": text }]).to_string())
             .header("Content-Type", "application/json")
             .header("Ocp-Apim-Subscription-Key", "{{secret:microsoft-api-key}}");
         if !cfg.microsoft_region.is_empty() && cfg.microsoft_region != "global" {
@@ -646,25 +663,20 @@ fn translate_microsoft(
         let resp = host::fetch(&req)?;
         let txt = resp.text();
         check_http_status(resp.status, &txt, "Microsoft Azure Translator")?;
-        (txt, true, None)
+        (txt, true)
     } else {
-        let mut token = fetch_edge_token(false, edge_token)?;
-        let url = format!("https://api-edge.cognitive.microsofttranslator.com/translate?{query}");
-        let mut req = HttpRequest::post(&url, body_json.clone())
-            .header("Content-Type", "application/json")
-            .header("Authorization", &format!("Bearer {token}"));
+        let from_param = from.map(percent_encode_rfc3986).unwrap_or_default();
+        let url = format!(
+            "https://edge.microsoft.com/translate/translatetext?from={from_param}&to={}&isEnterpriseClient=false",
+            percent_encode_rfc3986(to)
+        );
+        let mut req = HttpRequest::post(&url, json!([text]).to_string())
+            .header("Content-Type", "application/json");
         req.timeout_ms = Some(15_000);
-        let mut resp = host::fetch(&req)?;
-        if resp.status == 401 || resp.status == 403 {
-            token = fetch_edge_token(true, edge_token)?;
-            let retry_req = HttpRequest::post(&url, body_json)
-                .header("Content-Type", "application/json")
-                .header("Authorization", &format!("Bearer {token}"));
-            resp = host::fetch(&retry_req)?;
-        }
+        let resp = host::fetch(&req)?;
         let txt = resp.text();
         check_http_status(resp.status, &txt, "Microsoft Translator")?;
-        (txt, false, Some(token))
+        (txt, false)
     };
 
     let v: Value = serde_json::from_str(&resp_body)
@@ -690,18 +702,14 @@ fn translate_microsoft(
 
     let mut dict = Vec::new();
     let mut alternatives = Vec::new();
-    if !text.contains('\n') && text.split_whitespace().count() <= 2 && text.chars().count() <= 40 {
+    if auth_mode_used && !text.contains('\n') && text.split_whitespace().count() <= 2 && text.chars().count() <= 40 {
         if let Some(ms_from) = to_microsoft_code(&resolved_src)
             && ms_from != to
         {
-            let dict_base = if auth_mode_used {
-                if cfg.microsoft_custom_endpoint.is_empty() {
-                    "https://api.cognitive.microsofttranslator.com"
-                } else {
-                    cfg.microsoft_custom_endpoint.trim_end_matches('/')
-                }
+            let dict_base = if cfg.microsoft_custom_endpoint.is_empty() {
+                "https://api.cognitive.microsofttranslator.com"
             } else {
-                "https://api-edge.cognitive.microsofttranslator.com"
+                cfg.microsoft_custom_endpoint.trim_end_matches('/')
             };
             let dict_url = format!(
                 "{dict_base}/dictionary/lookup?api-version=3.0&from={}&to={}",
@@ -709,11 +717,10 @@ fn translate_microsoft(
                 percent_encode_rfc3986(to)
             );
             let mut dreq = HttpRequest::post(&dict_url, json!([{ "Text": text }]).to_string())
-                .header("Content-Type", "application/json");
-            if auth_mode_used {
-                dreq = dreq.header("Ocp-Apim-Subscription-Key", "{{secret:microsoft-api-key}}");
-            } else if let Some(tok) = bearer_token {
-                dreq = dreq.header("Authorization", &format!("Bearer {tok}"));
+                .header("Content-Type", "application/json")
+                .header("Ocp-Apim-Subscription-Key", "{{secret:microsoft-api-key}}");
+            if !cfg.microsoft_region.is_empty() && cfg.microsoft_region != "global" {
+                dreq = dreq.header("Ocp-Apim-Subscription-Region", &cfg.microsoft_region);
             }
             dreq.timeout_ms = Some(6_000);
             if let Ok(dresp) = host::fetch(&dreq)
@@ -1572,8 +1579,7 @@ mod tests {
             })
         });
         let cfg = TranslationConfig::load();
-        let mut edge = None;
-        let res = translate_with_engine(EngineId::Google, "cach", "cach", "auto", "zh-CN", &cfg, &mut edge).unwrap();
+        let res = translate_with_engine(EngineId::Google, "cach", "cach", "auto", "zh-CN", &cfg).unwrap();
         assert_eq!(res.translation, "缓存");
         assert_eq!(res.source_lang, "en");
         assert_eq!(res.spell_correction.as_deref(), Some("cache"));
@@ -1597,17 +1603,25 @@ mod tests {
     }
 
     #[test]
-    fn microsoft_edge_and_azure_work_with_token_caching() {
+    fn microsoft_edge_translatetext_and_azure_work() {
         let host = MockHost::install().with_capabilities(&[
             "storage",
             "secrets",
             "net:edge.microsoft.com",
-            "net:api-edge.cognitive.microsofttranslator.com",
             "net:api.cognitive.microsofttranslator.com",
         ]);
         host.on_fetch(|req| {
-            if req.url.contains("edge.microsoft.com/translate/auth") {
-                Ok(HttpResponse { status: 200, headers: vec![], body: b"edge.jwt.sig".to_vec() })
+            if req.url.contains("edge.microsoft.com/translate/translatetext") {
+                assert!(req.url.contains("isEnterpriseClient=false"));
+                assert!(req.url.contains("to=zh-Hans"));
+                assert!(!req.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("Authorization")));
+                let body: Value = serde_json::from_slice(req.body.as_ref().unwrap()).unwrap();
+                assert_eq!(body, serde_json::json!(["token"]));
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: r#"[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"令牌","to":"zh-Hans"}]}]"#.as_bytes().to_vec(),
+                })
             } else if req.url.contains("/dictionary/lookup") {
                 Ok(HttpResponse {
                     status: 200,
@@ -1623,26 +1637,48 @@ mod tests {
             }
         });
         let cfg = TranslationConfig::load();
-        let mut edge = None;
-        let r1 = translate_with_engine(EngineId::Microsoft, "token", "token", "auto", "zh-CN", &cfg, &mut edge).unwrap();
+        let r1 = translate_with_engine(EngineId::Microsoft, "token", "token", "auto", "zh-CN", &cfg).unwrap();
         assert_eq!(r1.translation, "令牌");
-        assert_eq!(r1.dict[0].pos, "noun");
-        // Second call reuses cached Edge token
-        let before = host.requests().len();
-        let _r2 = translate_with_engine(EngineId::Microsoft, "token", "token", "auto", "zh-CN", &cfg, &mut edge).unwrap();
-        let new_reqs = &host.requests()[before..];
-        assert!(!new_reqs.iter().any(|r| r.url.contains("/translate/auth")));
+        assert_eq!(r1.source_lang, "en");
+        assert!(host.requests().iter().all(|r| !r.url.contains("/translate/auth")));
 
-        // Azure mode injects secret header
+        // Azure mode injects secret header + dictionary lookup
         host.set_setting("microsoftMode", "\"azure\"");
         host.set_setting("microsoftRegion", "\"eastasia\"");
         host.set_secret("microsoft-api-key", "az-secret");
         let cfg_az = TranslationConfig::load();
-        let r3 = translate_with_engine(EngineId::Microsoft, "token", "token", "en", "zh-CN", &cfg_az, &mut edge).unwrap();
-        assert_eq!(r3.translation, "令牌");
+        let r2 = translate_with_engine(EngineId::Microsoft, "token", "token", "en", "zh-CN", &cfg_az).unwrap();
+        assert_eq!(r2.translation, "令牌");
+        assert_eq!(r2.dict[0].pos, "noun");
         let az_req = host.requests().into_iter().rfind(|r| r.url.contains("api.cognitive.microsofttranslator.com/translate")).unwrap();
         assert!(az_req.headers.contains(&("Ocp-Apim-Subscription-Key".into(), "az-secret".into())));
         assert!(az_req.headers.contains(&("Ocp-Apim-Subscription-Region".into(), "eastasia".into())));
+    }
+
+    #[test]
+    fn check_http_status_formats_429_and_strips_html_errors() {
+        let err_429 = check_http_status(
+            429,
+            "<html><head><title>Sorry...</title><style>body{}</style></head><body>Blocked</body></html>",
+            "Google Translate",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err_429.contains("Google Translate HTTP 429"));
+        assert!(err_429.contains("Microsoft Translator"));
+        assert!(!err_429.contains("<html>"));
+        assert!(!err_429.contains("<style>"));
+
+        let err_502 = check_http_status(
+            502,
+            "<html><head><style>body{color:red}</style><script>alert(1)</script></head><body><h1>502 Bad Gateway</h1><p>Upstream down</p></body></html>",
+            "Microsoft Translator",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err_502.contains("Microsoft Translator HTTP 502: 502 Bad Gateway Upstream down"));
+        assert!(!err_502.contains("color:red"));
+        assert!(!err_502.contains("alert(1)"));
     }
 
     #[test]
@@ -1675,8 +1711,7 @@ mod tests {
             }
         });
         let cfg = TranslationConfig::load();
-        let mut edge = None;
-        let dict_res = translate_with_engine(EngineId::Openai, "idempotent", "idempotent", "auto", "zh-CN", &cfg, &mut edge).unwrap();
+        let dict_res = translate_with_engine(EngineId::Openai, "idempotent", "idempotent", "auto", "zh-CN", &cfg).unwrap();
         assert_eq!(dict_res.translation, "幂等的");
         assert_eq!(dict_res.phonetics.general.as_deref(), Some("/ˌaɪdɛmˈpoʊtənt/"));
         assert_eq!(dict_res.alternatives, vec!["等幂的"]);
@@ -1684,7 +1719,7 @@ mod tests {
         // Fallback plain text even on short phrase if local model returns plain text
         host.set_setting("openaiBaseUrl", "\"http://localhost:11434/v1\"");
         let cfg_local = TranslationConfig::load();
-        let plain_res = translate_with_engine(EngineId::Openai, "hello", "hello", "auto", "zh-CN", &cfg_local, &mut edge).unwrap();
+        let plain_res = translate_with_engine(EngineId::Openai, "hello", "hello", "auto", "zh-CN", &cfg_local).unwrap();
         assert_eq!(plain_res.translation, "普通文本译文");
     }
 
@@ -1739,9 +1774,8 @@ mod tests {
         });
 
         let cfg = TranslationConfig::load();
-        let mut edge = None;
         for engine in [EngineId::Deepl, EngineId::Youdao, EngineId::Baidu, EngineId::Alibaba] {
-            let r = translate_with_engine(engine, "hello", "hello", "auto", "zh-CN", &cfg, &mut edge).unwrap();
+            let r = translate_with_engine(engine, "hello", "hello", "auto", "zh-CN", &cfg).unwrap();
             assert_eq!(r.translation, "你好");
             assert_eq!(r.source_lang, "en");
         }

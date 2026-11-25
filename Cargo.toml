@@ -1,6 +1,6 @@
 [package]
 name = "openidea-translation"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "YiiGuxing TranslationPlugin-style translation, AI dictionary, TTS pronunciation, inline doc annotations, and Word Book plugin for OpenIDEA"
 license = "Apache-2.0"

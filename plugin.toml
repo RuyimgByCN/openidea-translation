@@ -1,11 +1,11 @@
 id = "ruyimg.translation"
 name = "Translation"
-version = "0.1.0"
+version = "0.1.1"
 description = "YiiGuxing TranslationPlugin for OpenIDEA: 7 translation engines with Multi-Engine Compare, Google spell check & Velocity OpenAI prompts, 6 TTS backends (Edge, Azure, Youdao, Google, OpenAI, Browser), multi-cursor Translate & Replace with naming styles & keepFormat, inline comment/doc & .ipynb translation with tag protection, Word Book with 7 export/import formats, Tag Manager & Word of the Day (22 commands, 4 settings pages, zero high-risk permissions)."
 authors = ["ruyimg"]
 homepage = "https://github.com/RuyimgByCN/openidea-translation"
 license = "Apache-2.0"
-change-notes = "0.1.0 — full-parity release: 7 translation engines + Multi-Engine Compare, Google spell check (&dt=at/&dt=qca), Velocity-style OpenAI prompts, 6 TTS backends (Edge WS/Azure/Youdao/Chunked Google/OpenAI/Browser), multi-cursor Translate & Replace (autoReplace/keepFormat/stripArticles), inline tag protection + bilingual & .ipynb doc translation, Word Book (7 export/import formats, flashcards, Tag Manager, Word of the Day), 22 commands, 4 settings pages, EN/ZH UI."
+change-notes = "0.1.1 — Fix stale document preview Apply (rejects replacing source files edited after preview creation); parse RFC-4180 CSV records across quoted multiline fields, CRLF, and escaped quotes in Word Book import; streamline editor context menu to Translate & Replace with Translation with icons and update Edge translation endpoint. 0.1.0 — full-parity release: 7 translation engines + Multi-Engine Compare, Google spell check (&dt=at/&dt=qca), Velocity-style OpenAI prompts, 6 TTS backends (Edge WS/Azure/Youdao/Chunked Google/OpenAI/Browser), multi-cursor Translate & Replace (autoReplace/keepFormat/stripArticles), inline tag protection + bilingual & .ipynb doc translation, Word Book (7 export/import formats, flashcards, Tag Manager, Word of the Day), 22 commands, 4 settings pages, EN/ZH UI."
 categories = ["tools", "ai"]
 engines.openidea = "^1.14"
 wasm = "dist/plugin.wasm"
@@ -29,7 +29,6 @@ required = [
   "events",
   "net:translate.googleapis.com",
   "net:edge.microsoft.com",
-  "net:api-edge.cognitive.microsofttranslator.com",
   "net:dict.youdao.com",
 ]
 optional = [
@@ -144,33 +143,35 @@ schema = "settings/tts.json"
 
 [[contributes.commands]]
 id = "translate"
-title = "Translation: Translate Selection / Word"
+title = "Translate"
+icon = "icons/translate.svg"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-and-replace"
-title = "Translation: Translate and Replace"
+title = "Replace with Translation"
+icon = "icons/translate_replace.svg"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-doc"
 title = "Translation: Translate Documentation / Comment"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "toggle-doc-annotations"
 title = "Translation: Toggle Inline Comment Translation"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-document"
 title = "Translation: Translate Current Document"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "quick-translate"
@@ -181,13 +182,13 @@ category = "Translation"
 id = "speak-selection"
 title = "Translation: Pronounce Selection (TTS)"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "add-to-wordbook"
 title = "Translation: Add Selection to Word Book"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "open-panel"
@@ -233,25 +234,25 @@ category = "Translation"
 id = "translate-inclusive"
 title = "Translation: Translate Whole Identifier (Inclusive)"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-exclusive"
 title = "Translation: Translate Subword Under Caret (Exclusive)"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-and-copy"
 title = "Translation: Translate and Copy Result"
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-with-engine"
 title = "Translation: Translate with Selected Engine..."
 category = "Translation"
-when = "editorFocus"
+when = "textEditorActive"
 
 [[contributes.commands]]
 id = "translate-clipboard"
@@ -268,57 +269,10 @@ category = "Translation"
 [[contributes.menus]]
 menu = "editor.context"
 command = "translate"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-inclusive"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-exclusive"
-submenu = "Translation"
 
 [[contributes.menus]]
 menu = "editor.context"
 command = "translate-and-replace"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-and-copy"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-with-engine"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-doc"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "toggle-doc-annotations"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "translate-document"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "speak-selection"
-submenu = "Translation"
-
-[[contributes.menus]]
-menu = "editor.context"
-command = "add-to-wordbook"
-submenu = "Translation"
 
 [[contributes.menus]]
 menu = "tools"

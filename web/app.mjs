@@ -15,7 +15,7 @@ const state = {
   activeTab: "translate",
   config: {
     isZh: false,
-    engine: "google",
+    engine: "microsoft",
     instantTranslation: true,
     sourceLanguage: "auto",
     targetLanguage: "auto",
@@ -990,10 +990,18 @@ window.openidea?.onMessage(async (raw) => {
       state.wordbook = msg.wordbook || [];
       state.history = msg.history || [];
       state.cacheCount = msg.cacheCount || 0;
-      if (msg.lastResult) state.lastResult = msg.lastResult;
+      if (msg.lastResult) {
+        state.lastResult = msg.lastResult;
+        state.lastCandidates = msg.lastCandidates || [];
+        state.inWordbook = !!msg.inWordbook;
+        if ($("source-input")) {
+          $("source-input").value = msg.lastResult.originalText || "";
+        }
+      }
       if (msg.wordOfTheDay) state.wordOfTheDay = msg.wordOfTheDay;
       applyLocale();
       renderSelectOptions();
+      updateSplitPreview();
       renderResult();
       renderWordBook();
       renderEnginesAndHistory();

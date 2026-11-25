@@ -319,7 +319,7 @@ impl TranslationConfig {
         let engine = storage_string(OVERRIDE_ENGINE)
             .and_then(|s| EngineId::parse(&s))
             .or_else(|| host::setting_string("engine").and_then(|s| EngineId::parse(&s)))
-            .unwrap_or(EngineId::Google);
+            .unwrap_or(EngineId::Microsoft);
         let instant_translation = storage_bool(OVERRIDE_INSTANT)
             .unwrap_or_else(|| host::setting_bool("instantTranslation").unwrap_or(true));
 
@@ -617,7 +617,7 @@ impl TranslationConfig {
                 configured: self.microsoft_mode == "edge-free" || ms_key,
                 mode: self.microsoft_mode.clone(),
                 note: if self.microsoft_mode == "edge-free" {
-                    if zh { "Edge 免费令牌模式" } else { "Edge free token mode" }.to_owned()
+                    if zh { "Edge 免密钥模式" } else { "Edge free mode (no key)" }.to_owned()
                 } else if ms_key {
                     format!("Azure ({})", self.microsoft_region)
                 } else {

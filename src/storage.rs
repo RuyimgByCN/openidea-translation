@@ -524,33 +524,163 @@ fn extract_xml_tag(block: &str, tag: &str) -> String {
         .to_owned()
 }
 
-fn parse_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut cur = String::new();
+fn parse_csv_records(raw: &str) -> Result<Vec<Vec<String>>, Error> {
+    let body = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    let mut records: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut current_field = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let mut at_field_start = true;
+    let mut chars = body.chars().peekable();
+
     while let Some(c) = chars.next() {
         if in_quotes {
             if c == '"' {
                 if chars.peek() == Some(&'"') {
                     chars.next();
-                    cur.push('"');
+                    current_field.push('"');
                 } else {
                     in_quotes = false;
                 }
+            } else if c == '\r' {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                current_field.push('\n');
             } else {
-                cur.push(c);
+                current_field.push(c);
             }
-        } else if c == '"' && cur.is_empty() {
+            continue;
+        }
+
+        if at_field_start && c == '"' {
             in_quotes = true;
+            at_field_start = false;
         } else if c == ',' {
-            fields.push(std::mem::take(&mut cur));
+            current_row.push(std::mem::take(&mut current_field));
+            at_field_start = true;
+        } else if c == '\r' || c == '\n' {
+            if c == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            if !(current_row.is_empty() && current_field.is_empty()) {
+                current_row.push(std::mem::take(&mut current_field));
+                records.push(std::mem::take(&mut current_row));
+            }
+            at_field_start = true;
         } else {
-            cur.push(c);
+            current_field.push(c);
+            at_field_start = false;
         }
     }
-    fields.push(cur);
-    fields
+
+    if in_quotes {
+        return Err(Error::Invalid("Unterminated quoted field in WordBook CSV".into()));
+    }
+    if !(current_row.is_empty() && current_field.is_empty()) {
+        current_row.push(current_field);
+        records.push(current_row);
+    }
+    Ok(records)
+}
+
+fn looks_like_csv(body: &str) -> bool {
+    let stripped = body.trim_start_matches(|c: char| c == '\u{feff}' || c == '\r' || c == '\n');
+    let first_phys = stripped.lines().next().unwrap_or("").trim();
+    if first_phys.to_ascii_lowercase().starts_with("word,phonetic,translation") {
+        return true;
+    }
+    if first_phys.contains('\t') {
+        return false;
+    }
+    if first_phys.starts_with('"') {
+        return parse_csv_records(stripped).is_ok_and(|rows| rows.first().is_some_and(|r| r.len() >= 2));
+    }
+    first_phys.contains(',') && !first_phys.contains(" - ")
+}
+
+fn push_csv_or_tsv_record(
+    cols: &[String],
+    from_tsv: bool,
+    seen: &mut HashSet<String>,
+    existing: &mut Vec<WordBookEntry>,
+    added: &mut usize,
+    now: u64,
+) {
+    let word = cols.first().map(|s| s.trim()).unwrap_or("");
+    if word.is_empty() || !seen.insert(word.to_ascii_lowercase()) {
+        return;
+    }
+    let (phonetic, translation, explains, tags, note, source_lang, target_lang, mastered) =
+        if cols.len() >= 3 && !from_tsv {
+            (
+                cols.get(1).map(|s| s.trim().to_owned()).unwrap_or_default(),
+                cols.get(2).map(|s| s.trim().to_owned()).unwrap_or_default(),
+                cols.get(3)
+                    .map(|s| {
+                        s.split(';')
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                cols.get(4)
+                    .map(|s| {
+                        s.split(',')
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                cols.get(5).map(|s| s.trim().to_owned()).unwrap_or_default(),
+                cols.get(6)
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "en".into()),
+                cols.get(7)
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "zh-CN".into()),
+                cols.get(8).is_some_and(|s| s.trim() == "true"),
+            )
+        } else {
+            (
+                String::new(),
+                cols.get(1).map(|s| s.trim().to_owned()).unwrap_or_default(),
+                Vec::new(),
+                cols.get(2)
+                    .map(|s| {
+                        s.split([' ', ','])
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                String::new(),
+                "auto".into(),
+                "zh-CN".into(),
+                false,
+            )
+        };
+    existing.push(WordBookEntry {
+        id: format!("wb-imp-{now}-{}", *added),
+        word: word.to_owned(),
+        source_lang,
+        target_lang,
+        translation,
+        phonetic,
+        explains,
+        tags,
+        note,
+        source_file: String::new(),
+        created_at_ms: now,
+        review_count: 0,
+        mastered,
+    });
+    *added += 1;
 }
 
 /// Imports Word Book entries from JSON, XML / Youdao XML, CSV, TSV, or plain TXT text,
@@ -653,13 +783,24 @@ pub fn import_wordbook_text(raw: &str) -> Result<(Vec<WordBookEntry>, usize), Er
             });
             added += 1;
         }
+    } else if looks_like_csv(trimmed) {
+        let records = parse_csv_records(raw)?;
+        for (idx, cols) in records.iter().enumerate() {
+            if idx == 0
+                && cols.first().is_some_and(|c| c.trim().eq_ignore_ascii_case("word"))
+                && cols.get(2).is_some_and(|c| c.trim().eq_ignore_ascii_case("translation"))
+            {
+                continue;
+            }
+            push_csv_or_tsv_record(cols, false, &mut seen, &mut existing, &mut added, now);
+        }
     } else {
-        for (idx, line) in trimmed.lines().enumerate() {
+        for line in trimmed.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
-            if !line.contains('\t') && !line.contains(',') {
+            if !line.contains('\t') {
                 // Plain TXT: `word - translation [tag1, tag2]` or bare `word`
                 let (word_part, rest_trans) = line
                     .split_once(" - ")
@@ -687,85 +828,8 @@ pub fn import_wordbook_text(raw: &str) -> Result<(Vec<WordBookEntry>, usize), Er
                 continue;
             }
 
-            let cols: Vec<String> = if line.contains('\t') {
-                line.split('\t').map(|s| s.trim().to_owned()).collect()
-            } else {
-                parse_csv_line(line)
-            };
-            if idx == 0
-                && cols.first().is_some_and(|c| c.eq_ignore_ascii_case("word"))
-                && cols.get(2).is_some_and(|c| c.eq_ignore_ascii_case("translation"))
-            {
-                continue;
-            }
-            let word = cols.first().map(|s| s.trim()).unwrap_or("");
-            if word.is_empty() || !seen.insert(word.to_ascii_lowercase()) {
-                continue;
-            }
-            let (phonetic, translation, explains, tags, note, source_lang, target_lang, mastered) =
-                if cols.len() >= 3 && !line.contains('\t') {
-                    (
-                        cols.get(1).cloned().unwrap_or_default(),
-                        cols.get(2).cloned().unwrap_or_default(),
-                        cols.get(3)
-                            .map(|s| {
-                                s.split(';')
-                                    .map(str::trim)
-                                    .filter(|x| !x.is_empty())
-                                    .map(str::to_owned)
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        cols.get(4)
-                            .map(|s| {
-                                s.split(',')
-                                    .map(str::trim)
-                                    .filter(|x| !x.is_empty())
-                                    .map(str::to_owned)
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        cols.get(5).cloned().unwrap_or_default(),
-                        cols.get(6).cloned().unwrap_or_else(|| "en".into()),
-                        cols.get(7).cloned().unwrap_or_else(|| "zh-CN".into()),
-                        cols.get(8).is_some_and(|s| s == "true"),
-                    )
-                } else {
-                    (
-                        String::new(),
-                        cols.get(1).cloned().unwrap_or_default(),
-                        Vec::new(),
-                        cols.get(2)
-                            .map(|s| {
-                                s.split([' ', ','])
-                                    .map(str::trim)
-                                    .filter(|x| !x.is_empty())
-                                    .map(str::to_owned)
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        String::new(),
-                        "auto".into(),
-                        "zh-CN".into(),
-                        false,
-                    )
-                };
-            existing.push(WordBookEntry {
-                id: format!("wb-imp-{now}-{added}"),
-                word: word.to_owned(),
-                source_lang,
-                target_lang,
-                translation,
-                phonetic,
-                explains,
-                tags,
-                note,
-                source_file: String::new(),
-                created_at_ms: now,
-                review_count: 0,
-                mastered,
-            });
-            added += 1;
+            let cols: Vec<String> = line.split('\t').map(|s| s.trim().to_owned()).collect();
+            push_csv_or_tsv_record(&cols, true, &mut seen, &mut existing, &mut added, now);
         }
     }
 
@@ -854,5 +918,70 @@ mod tests {
         let (after_del, d_count) = delete_wordbook_tag("server").unwrap();
         assert_eq!(d_count, 1);
         assert!(!after_del[0].tags.contains(&"server".to_owned()));
+    }
+
+    #[test]
+    fn csv_import_preserves_multiline_words_notes_crlf_and_escaped_quotes() {
+        let _host = MockHost::install().with_capabilities(&["storage"]);
+        let entries = vec![
+            WordBookEntry {
+                id: "1".into(),
+                word: "hello\nworld".into(),
+                source_lang: "en".into(),
+                target_lang: "zh-CN".into(),
+                translation: "你好\n世界".into(),
+                phonetic: String::new(),
+                explains: vec!["line \"one\"".into()],
+                tags: vec!["multi".into()],
+                note: "first note line\nsecond note line, \"quoted\"".into(),
+                source_file: String::new(),
+                created_at_ms: 1000,
+                review_count: 0,
+                mastered: true,
+            },
+            WordBookEntry {
+                id: "2".into(),
+                word: "plain".into(),
+                source_lang: "en".into(),
+                target_lang: "zh-CN".into(),
+                translation: "简单".into(),
+                phonetic: String::new(),
+                explains: Vec::new(),
+                tags: Vec::new(),
+                note: String::new(),
+                source_file: String::new(),
+                created_at_ms: 1001,
+                review_count: 0,
+                mastered: false,
+            },
+        ];
+        let (_, csv) = export_wordbook(&entries, "csv").unwrap();
+        let csv_crlf = csv.replace('\n', "\r\n");
+
+        save_wordbook(&[]).unwrap();
+        let (reimported, count) = import_wordbook_text(&csv_crlf).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(reimported.len(), 2);
+        assert_eq!(reimported[0].word, "hello\nworld");
+        assert_eq!(reimported[0].translation, "你好\n世界");
+        assert_eq!(reimported[0].explains, vec!["line \"one\""]);
+        assert_eq!(reimported[0].note, "first note line\nsecond note line, \"quoted\"");
+        assert!(reimported[0].mastered);
+        assert_eq!(reimported[1].word, "plain");
+
+        // Control: multiline JSON, TSV, and TXT remain intact
+        let (_, json_str) = export_wordbook(&entries, "json").unwrap();
+        save_wordbook(&[]).unwrap();
+        let (from_json, j_count) = import_wordbook_text(&json_str).unwrap();
+        assert_eq!(j_count, 2);
+        assert_eq!(from_json[0].word, "hello\nworld");
+
+        save_wordbook(&[]).unwrap();
+        let (_, tsv_count) = import_wordbook_text("alpha\t阿尔法\tdev").unwrap();
+        assert_eq!(tsv_count, 1);
+
+        save_wordbook(&[]).unwrap();
+        let (_, txt_count) = import_wordbook_text("beta - 贝塔 [core, net]").unwrap();
+        assert_eq!(txt_count, 1);
     }
 }

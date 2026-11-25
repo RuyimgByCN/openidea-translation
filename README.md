@@ -40,14 +40,15 @@ An OpenIDEA plugin bringing [YiiGuxing/TranslationPlugin](https://github.com/Yii
 ## Settings Pages & Commands
 
 - **4 Settings Pages**: `General`, `Engines & AI`, `Replace & Document`, `Text-to-Speech` (full EN / `zh-CN` localization).
+- **Editor Context Menu**: Exposes **Translate** and **Replace with Translation** directly on right-click (matching IntelliJ IDEA), with remaining actions available via the **Tools** menu, shortcuts, and Command Palette / Search Everywhere.
 - **22 Commands** including `translate`, `translate-inclusive`, `translate-exclusive`, `translate-and-replace`, `translate-and-copy`, `translate-with-engine`, `translate-doc`, `toggle-doc-annotations`, `translate-document`, `quick-translate`, `translate-clipboard`, `speak-selection`, `add-to-wordbook`, `word-of-the-day`, `open-panel`, `open-wordbook`, `switch-engine`, `switch-target-language`, `swap-languages`, `clear-cache`, `test-connection`, and `retry-pending-request`.
 
 ## Shortcuts
 
 | Action | Windows / Linux | macOS |
 | --- | --- | --- |
-| Translate Selection / Word | `Ctrl+Shift+Y` | `Ctrl+Meta+U` |
-| Translate and Replace | `Ctrl+Shift+X` | `Ctrl+Meta+O` |
+| Translate | `Ctrl+Shift+Y` | `Ctrl+Meta+U` |
+| Replace with Translation | `Ctrl+Shift+X` | `Ctrl+Meta+O` |
 | Translate Documentation / Comment | `Ctrl+Shift+Q` | `Ctrl+Meta+I` |
 | Quick Translate Input… | `Alt+Shift+Y` | `Meta+Alt+Y` |
 

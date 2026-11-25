@@ -78,7 +78,7 @@
     "microsoftMode": {
       "type": "string",
       "title": "Microsoft Translator mode",
-      "description": "edge-free uses Microsoft Edge translator tokens (no key required); azure uses your official Azure Cognitive Services secret (microsoft-api-key).",
+      "description": "edge-free uses Microsoft Edge's tokenless translation endpoint (no key required); azure uses your official Azure Cognitive Services secret (microsoft-api-key).",
       "enum": ["edge-free", "azure"],
       "default": "edge-free",
       "group": "Microsoft Translator"

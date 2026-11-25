@@ -13,7 +13,7 @@
       "title": "Translation engine",
       "description": "Active translation backend used by editor commands, document translation, and the Translation panel.",
       "enum": ["google", "microsoft", "openai", "deepl", "youdao", "baidu", "alibaba"],
-      "default": "google",
+      "default": "microsoft",
       "group": "General"
     },
     "instantTranslation": {

@@ -6,7 +6,7 @@ pub mod text_proc;
 pub mod tts;
 
 use crate::config::{ConfigSnapshot, EngineId, TranslationConfig, TtsEngineId};
-use crate::engines::{EdgeToken, TranslationResult, translate_with_engine_mode, unix_millis_now};
+use crate::engines::{TranslationResult, translate_with_engine_mode, unix_millis_now};
 use crate::languages::{LANGUAGES, display_name, resolve_lang_pair_with_strategy};
 use crate::storage::{
     CacheEntry, HistoryItem, WordBookEntry, delete_wordbook_tag, export_wordbook, find_wordbook,
@@ -77,15 +77,21 @@ struct TranslatedCommentItem {
     translation: String,
 }
 
+#[derive(Clone, Debug)]
+struct ContentTabSource {
+    original_text: String,
+    path: String,
+    version: u64,
+}
+
 #[derive(Default)]
 pub struct TranslationPlugin {
     cache: Vec<CacheEntry>,
     cache_loaded: bool,
-    edge_token: Option<EdgeToken>,
     pending_request: Option<PendingAction>,
     pending_tts: HashMap<u64, PendingEdgeTts>,
     annotated_files: HashSet<String>,
-    content_tab_sources: HashMap<String, (String, String)>,
+    content_tab_sources: HashMap<String, ContentTabSource>,
     last_result: Option<TranslationResult>,
     last_target: Option<TargetContext>,
     startup_wotd_shown: bool,
@@ -183,7 +189,6 @@ impl TranslationPlugin {
             &resolved_src,
             &resolved_tgt,
             cfg,
-            &mut self.edge_token,
             is_document,
         )?;
         if cfg.cache_enabled {
@@ -232,6 +237,20 @@ impl TranslationPlugin {
         let history = load_history();
         let snap: ConfigSnapshot = cfg.snapshot();
         let wotd = pick_word_of_the_day(&wordbook).cloned();
+        let (last_candidates, in_wordbook) = if let Some(ref res) = self.last_result {
+            (
+                generate_replace_candidates_ext(
+                    &res.translation,
+                    &res.alternatives,
+                    &cfg.preferred_naming_style,
+                    cfg.strip_articles_in_identifier,
+                    &cfg.separators,
+                ),
+                find_wordbook(&wordbook, &res.original_text, Some(&res.query_text)).is_some(),
+            )
+        } else {
+            (Vec::new(), false)
+        };
         let payload = json!({
             "op": "init-state",
             "config": snap,
@@ -240,6 +259,8 @@ impl TranslationPlugin {
             "history": history,
             "cacheCount": self.cache.len(),
             "lastResult": self.last_result,
+            "lastCandidates": last_candidates,
+            "inWordbook": in_wordbook,
             "wordOfTheDay": wotd,
         });
         let _ = host::post_view_message(VIEW, &payload.to_string());
@@ -1058,8 +1079,14 @@ impl TranslationPlugin {
             .filter(|s| !s.is_empty())
             .unwrap_or("document.txt");
         let tab_key = format!("doc-trans:{base_name}");
-        self.content_tab_sources
-            .insert(tab_key.clone(), (doc.text.clone(), path.clone()));
+        self.content_tab_sources.insert(
+            tab_key.clone(),
+            ContentTabSource {
+                original_text: doc.text.clone(),
+                path: path.clone(),
+                version: doc.version,
+            },
+        );
 
         let zh = cfg.is_zh();
         if cfg.open_doc_preview_tab {
@@ -1510,7 +1537,6 @@ impl Plugin for TranslationPlugin {
                     sample_src,
                     sample_tgt,
                     &cfg,
-                    &mut self.edge_token,
                     false,
                 )?;
                 let msg = if cfg.is_zh() {
@@ -1572,7 +1598,6 @@ impl Plugin for TranslationPlugin {
                             "en",
                             &cfg.primary_language,
                             &cfg,
-                            &mut self.edge_token,
                             false,
                         )?;
                         let msg = format!(
@@ -1679,7 +1704,7 @@ impl Plugin for TranslationPlugin {
                                 let left = self
                                     .content_tab_sources
                                     .get(&act.key)
-                                    .map(|(orig, _)| orig.clone())
+                                    .map(|s| s.original_text.clone())
                                     .unwrap_or_default();
                                 let reply = ContentTabReply {
                                     diff: Some(ContentDiff {
@@ -1705,26 +1730,46 @@ impl Plugin for TranslationPlugin {
                                 let _ = host::reply_content_tab(&act.request_id, &reply);
                             }
                             "apply" => {
-                                let target_path = self
-                                    .content_tab_sources
-                                    .get(&act.key)
-                                    .map(|(_, p)| p.clone());
-                                let applied = if let (Some(path), Some(editor)) =
-                                    (target_path, ctx.editor())
-                                    && editor.path() == path
+                                let source = self.content_tab_sources.get(&act.key).cloned();
+                                let applied = if let (Some(src), Some(editor)) =
+                                    (source, ctx.editor())
+                                    && editor.path() == src.path
                                     && let Ok(doc) = editor.document()
                                 {
-                                    let end = openidea_plugin::text::position(
-                                        &doc.text,
-                                        doc.text.len(),
-                                    );
-                                    editor.apply_edits(
-                                        doc.version,
-                                        &[TextEdit {
-                                            range: Range::new(Position::new(0, 0), end),
-                                            text: act.content.clone(),
-                                        }],
-                                    )
+                                    if doc.version != src.version || doc.text != src.original_text {
+                                        Err(Error::Invalid(
+                                            if zh {
+                                                "原文档在生成预览后已被修改，请重新翻译后再应用以免覆盖最新内容"
+                                            } else {
+                                                "Source document changed after the preview was created; re-translate before applying to avoid overwriting newer edits"
+                                            }
+                                            .into(),
+                                        ))
+                                    } else {
+                                        let end = openidea_plugin::text::position(
+                                            &doc.text,
+                                            doc.text.len(),
+                                        );
+                                        editor
+                                            .apply_edits(
+                                                src.version,
+                                                &[TextEdit {
+                                                    range: Range::new(Position::new(0, 0), end),
+                                                    text: act.content.clone(),
+                                                }],
+                                            )
+                                            .inspect(|&new_version| {
+                                                self.content_tab_sources.insert(
+                                                    act.key.clone(),
+                                                    ContentTabSource {
+                                                        original_text: act.content.clone(),
+                                                        path: src.path,
+                                                        version: new_version,
+                                                    },
+                                                );
+                                            })
+                                            .map(|_| ())
+                                    }
                                 } else {
                                     Err(Error::Invalid(
                                         "Open the original source file in the editor to apply"
@@ -1732,7 +1777,7 @@ impl Plugin for TranslationPlugin {
                                     ))
                                 };
                                 let reply = match applied {
-                                    Ok(_) => ContentTabReply {
+                                    Ok(()) => ContentTabReply {
                                         saved: Some(true),
                                         status: Some(
                                             if zh {
@@ -2497,7 +2542,6 @@ impl Views for TranslationPlugin {
                     "en",
                     &cfg.primary_language,
                     &cfg,
-                    &mut self.edge_token,
                     false,
                 ) {
                     Ok(res) => {
@@ -2868,9 +2912,19 @@ mod tests {
             "events",
             "project.read",
             "secrets",
+            "net:edge.microsoft.com",
             "net:translate.googleapis.com",
             "net:dict.youdao.com",
         ])
+    }
+
+    fn ms_resp(text: &str) -> Vec<u8> {
+        serde_json::json!([{
+            "detectedLanguage": { "language": "en" },
+            "translations": [{ "text": text, "to": "zh-Hans" }]
+        }])
+        .to_string()
+        .into_bytes()
     }
 
     #[test]
@@ -2889,7 +2943,8 @@ mod tests {
     fn translate_inclusive_exclusive_and_and_copy_commands_work() {
         let host = setup_host();
         host.on_fetch(|req| {
-            let word = if req.url.contains("Profile") && !req.url.contains("user") {
+            let body_text = String::from_utf8(req.body.clone().unwrap_or_default()).unwrap_or_default();
+            let word = if body_text.contains("Profile") && !body_text.contains("user") {
                 "个人资料"
             } else {
                 "用户个人资料"
@@ -2897,12 +2952,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: serde_json::json!({
-                    "sentences": [{ "trans": word }],
-                    "src": "en"
-                })
-                .to_string()
-                .into_bytes(),
+                body: ms_resp(word),
             })
         });
         host.open_editor("/proj/src/lib.rs", "rust", "let userProfile = 1;", &[(0, 10, 0, 10)]);
@@ -2926,7 +2976,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: br#"{"sentences":[{"trans":"user authentication service"}],"src":"zh-CN"}"#
+                body: br#"[{"detectedLanguage":{"language":"zh-Hans"},"translations":[{"text":"user authentication service","to":"en"}]}]"#
                     .to_vec(),
             })
         });
@@ -2986,12 +3036,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: serde_json::json!({
-                    "sentences": [{ "trans": "剪贴板文本" }],
-                    "src": "en"
-                })
-                .to_string()
-                .into_bytes(),
+                body: ms_resp("剪贴板文本"),
             })
         });
         host.set_clipboard(Some("clipboard text"), None);
@@ -3076,7 +3121,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: r#"{"sentences":[{"trans":"获取用户资料"}],"src":"en"}"#.as_bytes().to_vec(),
+                body: ms_resp("获取用户资料"),
             })
         });
         host.open_editor("/proj/src/lib.rs", "rust", "fn getUserProfile() {}", &[(0, 5, 0, 5)]);
@@ -3122,9 +3167,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: r#"{"sentences":[{"trans":"初始化数据库连接池"}],"src":"en"}"#
-                    .as_bytes()
-                    .to_vec(),
+                body: ms_resp("初始化数据库连接池"),
             })
         });
         host.open_editor(
@@ -3154,11 +3197,16 @@ mod tests {
     #[test]
     fn code_action_search_and_compare_engines_work() {
         let host = setup_host();
-        host.on_fetch(|_| {
+        host.on_fetch(|req| {
+            let body = if req.url.contains("translate.googleapis.com") {
+                br#"{"sentences":[{"trans":"query user order"}],"src":"zh-CN"}"#.to_vec()
+            } else {
+                br#"[{"detectedLanguage":{"language":"zh-Hans"},"translations":[{"text":"query user order","to":"en"}]}]"#.to_vec()
+            };
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: br#"{"sentences":[{"trans":"query user order"}],"src":"zh-CN"}"#.to_vec(),
+                body,
             })
         });
         let mut plugin = TranslationPlugin::default();
@@ -3251,11 +3299,12 @@ mod tests {
     fn translate_doc_comment_bilingual_and_ipynb_work() {
         let host = setup_host();
         host.on_fetch(|req| {
-            let decoded = if req.url.contains("Hello") {
+            let body_text = String::from_utf8(req.body.clone().unwrap_or_default()).unwrap_or_default();
+            let decoded = if body_text.contains("Hello") {
                 "你好"
-            } else if req.url.contains("Fetches") {
+            } else if body_text.contains("Fetches") {
                 "获取 [[TT_0]] 用户配置。"
-            } else if req.url.contains("NotebookTitle") {
+            } else if body_text.contains("NotebookTitle") {
                 "# 笔记本标题"
             } else {
                 "文档正文译文"
@@ -3263,12 +3312,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: serde_json::json!({
-                    "sentences": [{ "trans": decoded }],
-                    "src": "en"
-                })
-                .to_string()
-                .into_bytes(),
+                body: ms_resp(decoded),
             })
         });
 
@@ -3312,12 +3356,7 @@ mod tests {
             Ok(HttpResponse {
                 status: 200,
                 headers: vec![],
-                body: serde_json::json!({
-                    "sentences": [{ "trans": "你好" }],
-                    "src": "en"
-                })
-                .to_string()
-                .into_bytes(),
+                body: ms_resp("你好"),
             })
         });
         host.answer_next_prompt(Some(&["hello world"]));
@@ -3330,7 +3369,7 @@ mod tests {
             .run_command("test-connection", &host.invocation(), None)
             .unwrap()
             .unwrap();
-        assert!(msg.contains("Google"));
+        assert!(msg.contains("Microsoft"));
 
         plugin.run_command("swap-languages", &host.invocation(), None).unwrap();
         let cfg = TranslationConfig::load();
@@ -3343,5 +3382,112 @@ mod tests {
             .unwrap();
         assert!(cleared.contains("cleared") || cleared.contains("清空"));
         assert!(load_cache().is_empty());
+    }
+
+    #[test]
+    fn document_preview_apply_rejects_stale_source_and_wordbook_csv_preserves_multiline() {
+        let host = setup_host();
+        host.on_fetch(|req| {
+            let body_text = String::from_utf8(req.body.clone().unwrap_or_default()).unwrap_or_default();
+            let text = if body_text.contains("Original text") {
+                "translated text"
+            } else {
+                "你好\\n世界"
+            };
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: ms_resp(text),
+            })
+        });
+
+        let mut plugin = TranslationPlugin::default();
+        host.open_editor("/project/sample.md", "markdown", "Original text", &[(0, 0, 0, 0)]);
+        plugin.run_command("translate-document", &host.invocation(), None).unwrap();
+
+        // Simulate user editing the source document after preview creation
+        host.type_in_editor("\nUSER-EDIT-AFTER-PREVIEW");
+        let stale_payload = serde_json::json!({
+            "requestId": "req-stale",
+            "key": "doc-trans:sample.md",
+            "action": "apply",
+            "content": "translated text",
+        })
+        .to_string();
+        plugin.handle_events(
+            &[Event::Other {
+                kind: "content-tab-action".into(),
+                data: stale_payload,
+            }],
+            &host.invocation(),
+        );
+        assert_eq!(host.editor_text(), "Original text\nUSER-EDIT-AFTER-PREVIEW");
+
+        // Control: fresh unchanged source applies cleanly
+        host.open_editor("/project/fresh.md", "markdown", "Original text", &[(0, 0, 0, 0)]);
+        plugin.run_command("translate-document", &host.invocation(), None).unwrap();
+        let fresh_payload = serde_json::json!({
+            "requestId": "req-fresh",
+            "key": "doc-trans:fresh.md",
+            "action": "apply",
+            "content": "translated text",
+        })
+        .to_string();
+        plugin.handle_events(
+            &[Event::Other {
+                kind: "content-tab-action".into(),
+                data: fresh_payload,
+            }],
+            &host.invocation(),
+        );
+        assert_eq!(host.editor_text(), "translated text");
+
+        // Exact Word Book multiline selection -> CSV export -> clear -> CSV import roundtrip
+        host.open_editor("/project/words.txt", "plaintext", "hello\nworld", &[(0, 0, 1, 5)]);
+        plugin.run_command("add-to-wordbook", &host.invocation(), None).unwrap();
+        plugin
+            .handle(
+                VIEW,
+                ViewEvent::Message(r#"{"op":"wordbook-export","format":"csv"}"#.into()),
+                &host.invocation(),
+            )
+            .unwrap();
+        let export_msg = host
+            .view_messages()
+            .into_iter()
+            .rev()
+            .find(|(_, m)| m.contains("export-data"))
+            .unwrap()
+            .1;
+        let export_json: serde_json::Value = serde_json::from_str(&export_msg).unwrap();
+        let csv_content = export_json["content"].as_str().unwrap().to_owned();
+
+        save_wordbook(&[]).unwrap();
+        plugin
+            .handle(
+                VIEW,
+                ViewEvent::Message(
+                    serde_json::json!({
+                        "op": "wordbook-import",
+                        "content": csv_content,
+                    })
+                    .to_string(),
+                ),
+                &host.invocation(),
+            )
+            .unwrap();
+        let sync_msg = host
+            .view_messages()
+            .into_iter()
+            .rev()
+            .find(|(_, m)| m.contains("importedCount"))
+            .unwrap()
+            .1;
+        let sync_json: serde_json::Value = serde_json::from_str(&sync_msg).unwrap();
+        assert_eq!(sync_json["importedCount"].as_u64(), Some(1));
+        let wb = load_wordbook();
+        assert_eq!(wb.len(), 1);
+        assert_eq!(wb[0].word, "hello\nworld");
+        assert!(!wb[0].translation.is_empty());
     }
 }
